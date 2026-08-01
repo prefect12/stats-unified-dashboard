@@ -302,6 +302,10 @@ internal final class TabbedPopup: NSObject {
         self.popup = PopupWindow(title: "Dashboard", module: .combined, view: self.content) { _ in }
         super.init()
 
+        self.content.selectionCallback = { [weak self] module in
+            self?.popup.setPopupTitle(module.name)
+        }
+
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(togglePopup),
@@ -386,6 +390,7 @@ private final class TabbedPopupContent: NSStackView, Popup_p {
     private let contentHeight: NSLayoutConstraint
     private var availableModules: [Module] = []
     fileprivate var selectedModule: Module?
+    fileprivate var selectionCallback: ((Module) -> Void)?
     private var isAppeared: Bool = false
 
     fileprivate var defaultModule: Module? {
@@ -461,6 +466,7 @@ private final class TabbedPopupContent: NSStackView, Popup_p {
 
         self.selectedModule = module
         self.tabs.selectedSegment = index
+        self.selectionCallback?(module)
         self.contentView.subviews.forEach { $0.removeFromSuperview() }
         view.sizeCallback = { [weak self] size in
             self?.updateContentSize(size.height)
