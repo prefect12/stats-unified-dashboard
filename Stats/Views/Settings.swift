@@ -100,6 +100,7 @@ class SettingsWindow: NSWindow, NSWindowDelegate, NSToolbarDelegate {
         
         self.tabBarView.setModules(modules)
         self.tabBarView.openMenu("Dashboard")
+        self.openModule("Dashboard")
     }
     
     deinit {
@@ -171,7 +172,7 @@ class SettingsWindow: NSWindow, NSWindowDelegate, NSToolbarDelegate {
         return [.flexibleSpace, .previewButton, .toggleButton]
     }
     
-    internal func open(module: String? = nil) {
+    internal func open(module: String? = nil, showModuleSettings: Bool = false) {
         if !self.isVisible {
             self.setIsVisible(true)
             self.makeKeyAndOrderFront(nil)
@@ -183,20 +184,37 @@ class SettingsWindow: NSWindow, NSWindowDelegate, NSToolbarDelegate {
         if var name = module {
             if name == "Combined modules" { name = "Dashboard" }
             self.tabBarView.openMenu(name)
+            self.openModule(name, showModuleSettings: showModuleSettings)
         }
+    }
+
+    private func openModule(_ name: String, showModuleSettings: Bool = false) {
+        NotificationCenter.default.post(
+            name: .openModuleSettings,
+            object: nil,
+            userInfo: [
+                "module": name,
+                "showModuleSettings": showModuleSettings
+            ]
+        )
     }
     
     @objc private func menuCallback(_ notification: Notification) {
         if let title = notification.userInfo?["module"] as? String {
+            let showModuleSettings = notification.userInfo?["showModuleSettings"] as? Bool ?? false
             var view: NSView = NSView()
             if let detectedModule = modules.first(where: { $0.config.name == title }) {
-                if let v = detectedModule.window {
+                if showModuleSettings, let v = detectedModule.window {
+                    view = v
+                } else if let v = detectedModule.portal {
+                    view = v
+                } else if let v = detectedModule.window {
                     view = v
                 }
                 self.activeModuleName = detectedModule.config.name
                 toggleNSControlState(self.toggleButton, state: detectedModule.enabled ? .on : .off)
                 self.toggleButton?.isHidden = false
-                self.settingsPreviewButton?.isHidden = !detectedModule.config.hasPreview
+                self.settingsPreviewButton?.isHidden = !showModuleSettings || !detectedModule.config.hasPreview
                 NotificationCenter.default.post(name: .openWindow, object: nil, userInfo: ["module": detectedModule.config.name, "state": true])
             } else if title == "Dashboard" {
                 view = self.dashboard

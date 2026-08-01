@@ -130,7 +130,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     
     @objc private func handleToggleSettings(_ notification: Notification) {
         let module = notification.userInfo?["module"] as? String
-        self.ensureSettingsWindow().open(module: module)
+        let showModuleSettings = notification.userInfo?["showModuleSettings"] as? Bool ?? true
+        self.ensureSettingsWindow().open(module: module, showModuleSettings: showModuleSettings)
     }
     
     @objc private func handleRemoteAuthenticated() {

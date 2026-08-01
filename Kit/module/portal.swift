@@ -117,6 +117,10 @@ public class PortalHeader: NSStackView {
     
     @objc private func openSettings() {
         self.window?.setIsVisible(false)
-        NotificationCenter.default.post(name: .toggleSettings, object: nil, userInfo: ["module": self.name])
+        NotificationCenter.default.post(
+            name: .toggleSettings,
+            object: nil,
+            userInfo: ["module": self.name, "showModuleSettings": true]
+        )
     }
 }

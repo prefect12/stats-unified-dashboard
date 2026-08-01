@@ -477,7 +477,11 @@ internal class HeaderView: NSStackView {
     }
     
     @objc func openSettings() {
-        NotificationCenter.default.post(name: .toggleSettings, object: nil, userInfo: ["module": self.title])
+        NotificationCenter.default.post(
+            name: .toggleSettings,
+            object: nil,
+            userInfo: ["module": self.title, "showModuleSettings": true]
+        )
     }
     
     @objc private func closePopup() {
