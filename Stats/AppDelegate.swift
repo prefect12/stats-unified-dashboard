@@ -42,6 +42,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     internal var updateWindow: UpdateWindow?
     internal var setupWindow: SetupWindow?
     internal var supportWindow: SupportWindow?
+    internal var tabbedPopup: TabbedPopup?
     
     internal var menuBarItem: NSStatusItem? = nil
     internal var combinedView: CombinedView = CombinedView()
@@ -76,6 +77,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         self.parseArguments()
         self.parseVersion()
         SMCHelper.shared.checkForUpdate()
+        self.tabbedPopup = TabbedPopup()
         self.setup {
             modules.reversed().forEach{ $0.mount() }
             self.modulesMounted = true
@@ -130,8 +132,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     
     @objc private func handleToggleSettings(_ notification: Notification) {
         let module = notification.userInfo?["module"] as? String
-        let showModuleSettings = notification.userInfo?["showModuleSettings"] as? Bool ?? true
-        self.ensureSettingsWindow().open(module: module, showModuleSettings: showModuleSettings)
+        self.ensureSettingsWindow().open(module: module)
     }
     
     @objc private func handleRemoteAuthenticated() {

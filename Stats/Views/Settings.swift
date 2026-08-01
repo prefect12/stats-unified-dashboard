@@ -18,13 +18,13 @@ public extension NSToolbarItem.Identifier {
 }
 
 class SettingsWindow: NSWindow, NSWindowDelegate, NSToolbarDelegate {
-    private static let size: CGSize = CGSize(width: 960, height: 600)
+    private static let size: CGSize = CGSize(width: 720, height: 480)
     private static let frameAutosaveName = "eu.exelban.Stats.Settings.WindowFrame"
     
     internal var onClose: (() -> Void)?
     
-    private let mainView: MainView = MainView(frame: NSRect.zero)
-    private let tabBarView: TopTabBarView = TopTabBarView(frame: NSRect.zero)
+    private let mainView: MainView = MainView(frame: NSRect(x: 0, y: 0, width: 540, height: 480))
+    private let sidebarView: SidebarView = SidebarView(frame: NSRect(x: 0, y: 0, width: 180, height: 480))
     
     private var dashboard: NSView = Dashboard()
     private var settings: ApplicationSettings = ApplicationSettings()
@@ -45,38 +45,34 @@ class SettingsWindow: NSWindow, NSWindowDelegate, NSToolbarDelegate {
             backing: .buffered,
             defer: false
         )
-        
-        let rootView = NSStackView(frame: .zero)
-        rootView.orientation = .vertical
-        rootView.alignment = .width
-        rootView.distribution = .fill
-        rootView.spacing = 0
-        rootView.translatesAutoresizingMaskIntoConstraints = false
-        rootView.addArrangedSubview(self.tabBarView)
-        rootView.addArrangedSubview(self.mainView)
-        self.tabBarView.heightAnchor.constraint(equalToConstant: 52).isActive = true
 
-        let rootContainer = NSView(frame: .zero)
-        rootContainer.addSubview(rootView)
-        NSLayoutConstraint.activate([
-            rootView.leadingAnchor.constraint(equalTo: rootContainer.leadingAnchor),
-            rootView.trailingAnchor.constraint(equalTo: rootContainer.trailingAnchor),
-            rootView.topAnchor.constraint(equalTo: rootContainer.topAnchor),
-            rootView.bottomAnchor.constraint(equalTo: rootContainer.bottomAnchor)
-        ])
+        let sidebarViewController = NSSplitViewController()
 
-        let rootViewController: NSViewController = NSViewController(nibName: nil, bundle: nil)
-        rootViewController.view = rootContainer
-        
+        let sidebarVC: NSViewController = NSViewController(nibName: nil, bundle: nil)
+        sidebarVC.view = self.sidebarView
+        let mainVC: NSViewController = NSViewController(nibName: nil, bundle: nil)
+        mainVC.view = self.mainView
+
+        let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebarVC)
+        let contentItem = NSSplitViewItem(viewController: mainVC)
+
+        sidebarItem.canCollapse = false
+        contentItem.canCollapse = false
+
+        sidebarViewController.addSplitViewItem(sidebarItem)
+        sidebarViewController.addSplitViewItem(contentItem)
+
+        contentItem.minimumThickness = 540
+
         let newToolbar = NSToolbar(identifier: "eu.exelban.Stats.Settings.Toolbar")
         newToolbar.allowsUserCustomization = false
         newToolbar.autosavesConfiguration = true
         newToolbar.displayMode = .default
         newToolbar.showsBaselineSeparator = true
         newToolbar.delegate = self
-        
+
         self.toolbar = newToolbar
-        self.contentViewController = rootViewController
+        self.contentViewController = sidebarViewController
         self.titlebarAppearsTransparent = true
         if #unavailable(macOS 26.0) {
             self.backgroundColor = .clear
@@ -89,7 +85,7 @@ class SettingsWindow: NSWindow, NSWindowDelegate, NSToolbarDelegate {
             self.positionCenter()
         }
         self.setIsVisible(false)
-        self.minSize = NSSize(width: 720, height: 480)
+        self.minSize = NSSize(width: SettingsWindow.size.width, height: SettingsWindow.size.height-Constants.Popup.headerHeight)
         
         let windowController = NSWindowController()
         windowController.window = self
@@ -98,9 +94,8 @@ class SettingsWindow: NSWindow, NSWindowDelegate, NSToolbarDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(menuCallback), name: .openModuleSettings, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(externalModuleToggle), name: .toggleModule, object: nil)
         
-        self.tabBarView.setModules(modules)
-        self.tabBarView.openMenu("Dashboard")
-        self.openModule("Dashboard")
+        self.sidebarView.setModules(modules)
+        self.sidebarView.openMenu("Dashboard")
     }
     
     deinit {
@@ -172,7 +167,7 @@ class SettingsWindow: NSWindow, NSWindowDelegate, NSToolbarDelegate {
         return [.flexibleSpace, .previewButton, .toggleButton]
     }
     
-    internal func open(module: String? = nil, showModuleSettings: Bool = false) {
+    internal func open(module: String? = nil) {
         if !self.isVisible {
             self.setIsVisible(true)
             self.makeKeyAndOrderFront(nil)
@@ -183,38 +178,21 @@ class SettingsWindow: NSWindow, NSWindowDelegate, NSToolbarDelegate {
         
         if var name = module {
             if name == "Combined modules" { name = "Dashboard" }
-            self.tabBarView.openMenu(name)
-            self.openModule(name, showModuleSettings: showModuleSettings)
+            self.sidebarView.openMenu(name)
         }
-    }
-
-    private func openModule(_ name: String, showModuleSettings: Bool = false) {
-        NotificationCenter.default.post(
-            name: .openModuleSettings,
-            object: nil,
-            userInfo: [
-                "module": name,
-                "showModuleSettings": showModuleSettings
-            ]
-        )
     }
     
     @objc private func menuCallback(_ notification: Notification) {
         if let title = notification.userInfo?["module"] as? String {
-            let showModuleSettings = notification.userInfo?["showModuleSettings"] as? Bool ?? false
             var view: NSView = NSView()
             if let detectedModule = modules.first(where: { $0.config.name == title }) {
-                if showModuleSettings, let v = detectedModule.window {
-                    view = v
-                } else if let v = detectedModule.portal {
-                    view = v
-                } else if let v = detectedModule.window {
+                if let v = detectedModule.window {
                     view = v
                 }
                 self.activeModuleName = detectedModule.config.name
                 toggleNSControlState(self.toggleButton, state: detectedModule.enabled ? .on : .off)
                 self.toggleButton?.isHidden = false
-                self.settingsPreviewButton?.isHidden = !showModuleSettings || !detectedModule.config.hasPreview
+                self.settingsPreviewButton?.isHidden = !detectedModule.config.hasPreview
                 NotificationCenter.default.post(name: .openWindow, object: nil, userInfo: ["module": detectedModule.config.name, "state": true])
             } else if title == "Dashboard" {
                 view = self.dashboard
@@ -232,7 +210,7 @@ class SettingsWindow: NSWindow, NSWindowDelegate, NSToolbarDelegate {
             self.title = localizedString(title)
             
             self.mainView.setView(view)
-            self.tabBarView.openMenu(title)
+            self.sidebarView.openMenu(title)
         }
     }
     
@@ -296,7 +274,7 @@ private class MainView: NSView {
             
             self.container.leadingAnchor.constraint(equalTo: leadingAnchor),
             self.container.trailingAnchor.constraint(equalTo: trailingAnchor),
-            self.container.topAnchor.constraint(equalTo: topAnchor, constant: Constants.Settings.margin),
+            self.container.topAnchor.constraint(equalTo: topAnchor, constant: Constants.Popup.headerHeight*1.4),
             self.container.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
     }
@@ -315,62 +293,6 @@ private class MainView: NSView {
             view.topAnchor.constraint(equalTo: self.container.topAnchor),
             view.bottomAnchor.constraint(equalTo: self.container.bottomAnchor)
         ])
-    }
-}
-
-// MARK: - Top tabs
-
-private class TopTabBarView: NSView {
-    private var tabControl: NSSegmentedControl?
-    private var tabTitles: [String] = []
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        self.translatesAutoresizingMaskIntoConstraints = false
-        self.wantsLayer = true
-        self.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    fileprivate func setModules(_ list: [Module]) {
-        self.tabTitles = ["Dashboard"] + list.filter { $0.available }.map { $0.config.name } + ["Settings"]
-
-        let labels = self.tabTitles.map { localizedString($0) }
-        let control = NSSegmentedControl(labels: labels, trackingMode: .selectOne, target: self, action: #selector(self.selectTab))
-        control.segmentDistribution = .fillEqually
-        control.segmentStyle = .texturedRounded
-        control.translatesAutoresizingMaskIntoConstraints = false
-        control.controlSize = .large
-        control.selectSegment(withTag: 0)
-
-        self.tabControl?.removeFromSuperview()
-        self.tabControl = control
-        self.addSubview(control)
-        NSLayoutConstraint.activate([
-            control.leadingAnchor.constraint(equalTo: self.leadingAnchor, constant: Constants.Settings.margin),
-            control.trailingAnchor.constraint(equalTo: self.trailingAnchor, constant: -Constants.Settings.margin),
-            control.topAnchor.constraint(equalTo: self.topAnchor, constant: 8),
-            control.bottomAnchor.constraint(equalTo: self.bottomAnchor, constant: -8)
-        ])
-    }
-
-    fileprivate func openMenu(_ title: String) {
-        let normalizedTitle = title == "Combined modules" ? "Dashboard" : title
-        guard let index = self.tabTitles.firstIndex(of: normalizedTitle) else { return }
-        self.tabControl?.selectSegment(withTag: index)
-    }
-
-    @objc private func selectTab(_ sender: NSSegmentedControl) {
-        let index = sender.selectedSegment
-        guard index >= 0, index < self.tabTitles.count else { return }
-        NotificationCenter.default.post(
-            name: .openModuleSettings,
-            object: nil,
-            userInfo: ["module": self.tabTitles[index]]
-        )
     }
 }
 
