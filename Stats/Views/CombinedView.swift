@@ -428,7 +428,13 @@ private final class TabbedPopupContent: NSStackView, Popup_p {
         self.availableModules = modules.filter { $0.enabled && $0.popupContent != nil }
         self.tabs.segmentCount = self.availableModules.count
         for (index, module) in self.availableModules.enumerated() {
-            self.tabs.setLabel(localizedString(module.name), forSegment: index)
+            if let icon = module.config.icon?.copy() as? NSImage {
+                icon.isTemplate = true
+                self.tabs.setImage(icon, forSegment: index)
+                self.tabs.setToolTip(localizedString(module.name), forSegment: index)
+            } else {
+                self.tabs.setLabel(localizedString(module.name), forSegment: index)
+            }
         }
 
         if let selected = self.selectedModule,
