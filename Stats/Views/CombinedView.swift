@@ -386,6 +386,7 @@ private final class TabbedPopupContent: NSStackView, Popup_p {
     fileprivate var sizeCallback: ((NSSize) -> Void)? = nil
 
     private let tabs: NSSegmentedControl
+    private let tabsContainer: NSView
     private let contentView: NSView
     private let contentHeight: NSLayoutConstraint
     private var availableModules: [Module] = []
@@ -399,6 +400,7 @@ private final class TabbedPopupContent: NSStackView, Popup_p {
 
     init() {
         self.tabs = NSSegmentedControl(frame: NSRect(x: 0, y: 0, width: Constants.Popup.width, height: 28))
+        self.tabsContainer = NSView(frame: NSRect(x: 0, y: 0, width: Constants.Popup.width, height: 36))
         self.contentView = NSView(frame: NSRect(x: 0, y: 0, width: Constants.Popup.width, height: 0))
         self.contentHeight = self.contentView.heightAnchor.constraint(equalToConstant: 0)
 
@@ -415,12 +417,21 @@ private final class TabbedPopupContent: NSStackView, Popup_p {
         self.tabs.controlSize = .small
         self.tabs.target = self
         self.tabs.action = #selector(tabChanged)
-        self.tabs.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        self.tabs.translatesAutoresizingMaskIntoConstraints = false
+        self.tabsContainer.translatesAutoresizingMaskIntoConstraints = false
+        self.tabsContainer.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        self.tabsContainer.addSubview(self.tabs)
+        NSLayoutConstraint.activate([
+            self.tabs.centerXAnchor.constraint(equalTo: self.tabsContainer.centerXAnchor),
+            self.tabs.centerYAnchor.constraint(equalTo: self.tabsContainer.centerYAnchor),
+            self.tabs.widthAnchor.constraint(equalToConstant: min(440, Constants.Popup.width - 16)),
+            self.tabs.heightAnchor.constraint(equalToConstant: 28)
+        ])
 
         self.contentView.translatesAutoresizingMaskIntoConstraints = false
         self.contentHeight.isActive = true
 
-        self.addArrangedSubview(self.tabs)
+        self.addArrangedSubview(self.tabsContainer)
         self.addArrangedSubview(self.contentView)
         self.reloadModules()
     }
@@ -493,7 +504,7 @@ private final class TabbedPopupContent: NSStackView, Popup_p {
         self.contentView.setFrameSize(NSSize(width: self.frame.width, height: contentHeight))
         self.setFrameSize(NSSize(
             width: self.frame.width,
-            height: 28 + Constants.Popup.spacing + contentHeight
+            height: 36 + Constants.Popup.spacing + contentHeight
         ))
         self.sizeCallback?(self.frame.size)
     }
