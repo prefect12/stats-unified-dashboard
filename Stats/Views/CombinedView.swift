@@ -292,3 +292,237 @@ private class Popup: NSStackView, Popup_p {
         }
     }
 }
+
+internal final class TabbedPopup: NSObject {
+    private let content: TabbedPopupContent
+    private let popup: PopupWindow
+
+    override init() {
+        self.content = TabbedPopupContent()
+        self.popup = PopupWindow(title: "Dashboard", module: .combined, view: self.content) { _ in }
+        super.init()
+
+        self.content.selectionCallback = { [weak self] module in
+            self?.popup.setPopupTitle(module.name)
+        }
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(togglePopup),
+            name: .togglePopup,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(reloadTabs),
+            name: .toggleModule,
+            object: nil
+        )
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc private func reloadTabs() {
+        DispatchQueue.main.async { [weak self] in
+            self?.content.reloadModules()
+        }
+    }
+
+    @objc private func togglePopup(_ notification: Notification) {
+        guard let name = notification.userInfo?["module"] as? String,
+              let buttonOrigin = notification.userInfo?["origin"] as? CGPoint,
+              let buttonCenter = notification.userInfo?["center"] as? CGFloat else {
+            return
+        }
+
+        self.content.reloadModules()
+
+        let module: Module?
+        if name == "Dashboard" || name == "Combined modules" {
+            module = self.content.defaultModule
+        } else {
+            module = modules.first(where: { $0.name == name && $0.enabled && $0.popupContent != nil })
+        }
+        guard let module else { return }
+
+        if self.popup.isVisible && self.content.selectedModule === module {
+            self.popup.setIsVisible(false)
+            return
+        }
+
+        self.content.select(module)
+        self.popup.setPopupTitle(module.name)
+        self.showPopup(origin: buttonOrigin, center: buttonCenter)
+    }
+
+    private func showPopup(origin: CGPoint, center: CGFloat) {
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        self.popup.contentView?.invalidateIntrinsicContentSize()
+        self.popup.contentView?.layoutSubtreeIfNeeded()
+
+        let size = self.popup.frame.size
+        var x = origin.x - size.width/2 + center
+        let y = origin.y - size.height - 3
+
+        let buttonPoint = NSPoint(x: origin.x + center, y: origin.y)
+        if let screen = NSScreen.screens.first(where: { $0.frame.contains(buttonPoint) }) ?? NSScreen.main {
+            if x + size.width > screen.frame.maxX {
+                x = screen.frame.maxX - size.width - 3
+            }
+            if x < screen.frame.minX {
+                x = screen.frame.minX + 3
+            }
+        }
+
+        self.popup.setFrameOrigin(NSPoint(x: x, y: y))
+        self.popup.setIsVisible(true)
+    }
+}
+
+private final class TabbedPopupContent: NSStackView, Popup_p {
+    fileprivate var keyboardShortcut: [UInt16] = []
+    fileprivate var sizeCallback: ((NSSize) -> Void)? = nil
+
+    private let tabs: NSSegmentedControl
+    private let tabsContainer: NSView
+    private let contentView: NSView
+    private let contentHeight: NSLayoutConstraint
+    private var availableModules: [Module] = []
+    fileprivate var selectedModule: Module?
+    fileprivate var selectionCallback: ((Module) -> Void)?
+    private var isAppeared: Bool = false
+
+    fileprivate var defaultModule: Module? {
+        self.availableModules.first
+    }
+
+    init() {
+        self.tabs = NSSegmentedControl(frame: NSRect(x: 0, y: 0, width: Constants.Popup.width, height: 28))
+        self.tabsContainer = NSView(frame: NSRect(x: 0, y: 0, width: Constants.Popup.width, height: 36))
+        self.contentView = NSView(frame: NSRect(x: 0, y: 0, width: Constants.Popup.width, height: 0))
+        self.contentHeight = self.contentView.heightAnchor.constraint(equalToConstant: 0)
+
+        super.init(frame: NSRect(x: 0, y: 0, width: Constants.Popup.width, height: 0))
+
+        self.orientation = .vertical
+        self.alignment = .width
+        self.distribution = .fill
+        self.spacing = Constants.Popup.spacing
+
+        self.tabs.trackingMode = .selectOne
+        self.tabs.segmentStyle = .rounded
+        self.tabs.segmentDistribution = .fillEqually
+        self.tabs.controlSize = .small
+        self.tabs.target = self
+        self.tabs.action = #selector(tabChanged)
+        self.tabs.translatesAutoresizingMaskIntoConstraints = false
+        self.tabsContainer.translatesAutoresizingMaskIntoConstraints = false
+        self.tabsContainer.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        self.tabsContainer.addSubview(self.tabs)
+        NSLayoutConstraint.activate([
+            self.tabs.centerXAnchor.constraint(equalTo: self.tabsContainer.centerXAnchor),
+            self.tabs.centerYAnchor.constraint(equalTo: self.tabsContainer.centerYAnchor),
+            self.tabs.widthAnchor.constraint(equalToConstant: min(440, Constants.Popup.width - 16)),
+            self.tabs.heightAnchor.constraint(equalToConstant: 28)
+        ])
+
+        self.contentView.translatesAutoresizingMaskIntoConstraints = false
+        self.contentHeight.isActive = true
+
+        self.addArrangedSubview(self.tabsContainer)
+        self.addArrangedSubview(self.contentView)
+        self.reloadModules()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    fileprivate func reloadModules() {
+        self.availableModules = modules.filter { $0.enabled && $0.popupContent != nil }
+        self.tabs.segmentCount = self.availableModules.count
+        for (index, module) in self.availableModules.enumerated() {
+            if let icon = module.config.icon?.copy() as? NSImage {
+                icon.isTemplate = true
+                self.tabs.setImage(icon, forSegment: index)
+                self.tabs.setToolTip(localizedString(module.name), forSegment: index)
+            } else {
+                self.tabs.setLabel(localizedString(module.name), forSegment: index)
+            }
+        }
+
+        if let selected = self.selectedModule,
+           let replacement = self.availableModules.first(where: { $0 === selected }) {
+            self.select(replacement)
+        } else if let first = self.availableModules.first {
+            self.select(first)
+        } else {
+            self.selectedModule = nil
+            self.updateContentSize(0)
+        }
+    }
+
+    fileprivate func select(_ module: Module) {
+        guard self.availableModules.contains(where: { $0 === module }),
+              let index = self.availableModules.firstIndex(where: { $0 === module }),
+              let view = module.popupContent else {
+            return
+        }
+
+        if let previous = self.selectedModule, previous !== module, self.isAppeared {
+            previous.popupContent?.disappear()
+        }
+
+        self.selectedModule = module
+        self.tabs.selectedSegment = index
+        self.selectionCallback?(module)
+        self.contentView.subviews.forEach { $0.removeFromSuperview() }
+        view.sizeCallback = { [weak self] size in
+            self?.updateContentSize(size.height)
+        }
+        self.contentView.addSubview(view)
+        view.setFrameOrigin(.zero)
+        view.setFrameSize(NSSize(width: self.frame.width, height: view.frame.height))
+        self.updateContentSize(view.frame.height)
+
+        if self.isAppeared {
+            view.appear()
+        }
+    }
+
+    @objc private func tabChanged() {
+        let index = self.tabs.selectedSegment
+        guard index >= 0, index < self.availableModules.count else { return }
+        self.select(self.availableModules[index])
+    }
+
+    private func updateContentSize(_ height: CGFloat) {
+        let contentHeight = max(0, height)
+        self.contentHeight.constant = contentHeight
+        self.contentView.setFrameSize(NSSize(width: self.frame.width, height: contentHeight))
+        self.setFrameSize(NSSize(
+            width: self.frame.width,
+            height: 36 + Constants.Popup.spacing + contentHeight
+        ))
+        self.sizeCallback?(self.frame.size)
+    }
+
+    fileprivate func settings() -> NSView? { nil }
+
+    fileprivate func appear() {
+        self.isAppeared = true
+        self.selectedModule?.popupContent?.appear()
+    }
+
+    fileprivate func disappear() {
+        self.isAppeared = false
+        self.selectedModule?.popupContent?.disappear()
+    }
+
+    fileprivate func setKeyboardShortcut(_ binding: [UInt16]) {
+        self.keyboardShortcut = binding
+        Store.shared.set(key: "UnifiedPopupTabs_popup_keyboardShortcut", value: binding)
+    }
+}

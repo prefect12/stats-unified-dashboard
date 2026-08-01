@@ -16,8 +16,14 @@ internal class Portal: PortalWrapper {
     private let batteryView: BatteryView = BatteryView()
     
     private var levelField: NSTextField? = nil
+    private var timeLabelField: NSTextField? = nil
+    private var timeField: NSTextField? = nil
     private var statusField: NSTextField? = nil
     private var healthField: NSTextField? = nil
+
+    private var timeFormat: String {
+        Store.shared.string(key: "Battery_timeFormat", defaultValue: "short")
+    }
     
     public override func load() {
         let chart = self.chartView()
@@ -42,6 +48,9 @@ internal class Portal: PortalWrapper {
         view.spacing = Constants.Popup.spacing*2
         
         self.levelField = portalRow(view, title: "\(localizedString("Level")):").1
+        let time = portalRow(view, title: "\(localizedString("Time to discharge")):")
+        self.timeLabelField = time.0
+        self.timeField = time.1
         self.statusField = portalRow(view, title: "\(localizedString("Status")):").1
         self.healthField = portalRow(view, title: "\(localizedString("Health")):").1
         
@@ -54,6 +63,8 @@ internal class Portal: PortalWrapper {
             
             self.levelField?.stringValue = "\(Int(abs(value.level) * 100))%"
             self.levelField?.toolTip = "\(value.currentCapacity) mAh"
+            self.timeLabelField?.stringValue = "\(localizedString(value.isBatteryPowered ? "Time to discharge" : "Time to charge")):"
+            self.timeField?.stringValue = self.timeValue(value)
             
             var status: String = localizedString("Charging")
             var color: NSColor = .systemGreen
@@ -73,5 +84,23 @@ internal class Portal: PortalWrapper {
             
             self.healthField?.stringValue = "\(value.health)%"
         })
+    }
+
+    private func timeValue(_ value: Battery_Usage) -> String {
+        if value.isCharged {
+            return localizedString("Fully charged")
+        }
+        if value.optimizedChargingEngaged {
+            return localizedString("On hold")
+        }
+
+        let minutes = value.isBatteryPowered ? value.timeToEmpty : value.timeToCharge
+        if minutes == -1 {
+            return localizedString("Calculating")
+        }
+        if minutes <= 0 {
+            return localizedString("Unknown")
+        }
+        return Double(minutes * 60).printSecondsToHoursMinutesSeconds(short: self.timeFormat == "short")
     }
 }

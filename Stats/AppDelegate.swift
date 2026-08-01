@@ -42,6 +42,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     internal var updateWindow: UpdateWindow?
     internal var setupWindow: SetupWindow?
     internal var supportWindow: SupportWindow?
+    internal var tabbedPopup: TabbedPopup?
     
     internal var menuBarItem: NSStatusItem? = nil
     internal var combinedView: CombinedView = CombinedView()
@@ -76,6 +77,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         self.parseArguments()
         self.parseVersion()
         SMCHelper.shared.checkForUpdate()
+        self.tabbedPopup = TabbedPopup()
         self.setup {
             modules.reversed().forEach{ $0.mount() }
             self.modulesMounted = true
