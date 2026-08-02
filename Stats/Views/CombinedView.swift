@@ -18,6 +18,7 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     private var popup: PopupWindow? = nil
     private var carouselTimer: Timer?
     private var carouselIndex: Int = 0
+    private var followUpRecalculationScheduled: Bool = false
     
     private var status: Bool {
         Store.shared.bool(key: "CombinedModules", defaultValue: false)
@@ -132,6 +133,10 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
         let visibleModules = self.visibleModules
         self.syncCarousel(moduleCount: visibleModules.count)
 
+        let hasPendingWidgets = visibleModules.contains {
+            $0.menuBar.view.subviews.count < $0.menuBar.activeWidgets.count
+        }
+
         let modulesToDisplay: [Module]
         if visibleModules.count > 1 {
             self.carouselIndex = min(self.carouselIndex, visibleModules.count - 1)
@@ -159,6 +164,16 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
         }
         self.view.setFrameSize(NSSize(width: w, height: self.view.frame.height))
         self.menuBarItem?.length = w
+
+        if hasPendingWidgets && !self.followUpRecalculationScheduled {
+            self.followUpRecalculationScheduled = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                guard let self else { return }
+                self.followUpRecalculationScheduled = false
+                guard self.status else { return }
+                self.recalculate()
+            }
+        }
     }
 
     private func syncCarousel(moduleCount: Int) {
