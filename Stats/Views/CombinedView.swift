@@ -62,12 +62,6 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
         
         self.popup = PopupWindow(title: "Combined modules", module: .combined, view: Popup()) { _ in }
         
-        if self.status {
-            DispatchQueue.main.async { [weak self] in
-                self?.enable()
-            }
-        }
-        
         NotificationCenter.default.addObserver(self, selector: #selector(listenForOneView), name: .toggleOneView, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(listenForModuleRearrrange), name: .moduleRearrange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(listenCombinedModulesPopup), name: .combinedModulesPopup, object: nil)
@@ -82,6 +76,7 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     }
     
     public func enable() {
+        guard self.menuBarItem == nil else { return }
         self.menuBarItem = NSStatusBar.system.statusItem(withLength: 0)
         DispatchQueue.main.async(execute: {
             self.menuBarItem?.autosaveName = "StatsCombinedCarousel"

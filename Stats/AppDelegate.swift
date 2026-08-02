@@ -81,6 +81,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         self.setup {
             modules.reversed().forEach{ $0.mount() }
             self.modulesMounted = true
+            self.combinedView.enable()
             self.showSettingsIfNoActiveWidgets()
         }
         self.defaultValues()
