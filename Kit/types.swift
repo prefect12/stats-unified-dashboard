@@ -77,6 +77,17 @@ public let CombinedModulesSpacings: [KeyValue_t] = [
     KeyValue_t(key: "8", value: "8", additional: 8)
 ]
 
+public let CombinedModulesCarouselIntervals: [KeyValue_t] = [
+    KeyValue_t(key: "1", value: "1 sec", additional: 1),
+    KeyValue_t(key: "2", value: "2 sec", additional: 2),
+    KeyValue_t(key: "3", value: "3 sec", additional: 3),
+    KeyValue_t(key: "5", value: "5 sec", additional: 5),
+    KeyValue_t(key: "10", value: "10 sec", additional: 10),
+    KeyValue_t(key: "15", value: "15 sec", additional: 15),
+    KeyValue_t(key: "30", value: "30 sec", additional: 30),
+    KeyValue_t(key: "60", value: "60 sec", additional: 60)
+]
+
 public let PublicIPAddressRefreshIntervals: [KeyValue_t] = [
     KeyValue_t(key: "never", value: "Never"),
     KeyValue_t(key: "separator", value: "separator"),
@@ -317,6 +328,7 @@ public extension Notification.Name {
     static let moduleRearrange = Notification.Name("moduleRearrange")
     static let pause = Notification.Name("pause")
     static let toggleFanControl = Notification.Name("toggleFanControl")
+    static let combinedModulesCarouselInterval = Notification.Name("combinedModulesCarouselInterval")
     static let remoteLoginSuccess = Notification.Name("remoteLoginSuccess")
     static let remoteState = Notification.Name("remoteState")
     static let remoteAuthenticated = Notification.Name("remoteAuthenticated")

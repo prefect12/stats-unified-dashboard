@@ -56,12 +56,14 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
         
         NotificationCenter.default.addObserver(self, selector: #selector(listenForOneView), name: .toggleOneView, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(listenForModuleRearrrange), name: .moduleRearrange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(listenForCarouselInterval), name: .combinedModulesCarouselInterval, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(listenForModule), name: .toggleModule, object: nil)
     }
     
     deinit {
         NotificationCenter.default.removeObserver(self, name: .toggleOneView, object: nil)
         NotificationCenter.default.removeObserver(self, name: .moduleRearrange, object: nil)
+        NotificationCenter.default.removeObserver(self, name: .combinedModulesCarouselInterval, object: nil)
         NotificationCenter.default.removeObserver(self, name: .toggleModule, object: nil)
     }
     
@@ -198,6 +200,11 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     
     @objc private func listenForModuleRearrrange() {
         self.carouselIndex = 0
+        self.recalculate()
+    }
+
+    @objc private func listenForCarouselInterval() {
+        self.stopCarousel()
         self.recalculate()
     }
     
