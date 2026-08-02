@@ -34,11 +34,6 @@ class ApplicationSettings: NSStackView {
         get { Store.shared.bool(key: "CombinedModules_separator", defaultValue: false) }
         set { Store.shared.set(key: "CombinedModules_separator", value: newValue) }
     }
-    private var combinedModulesPopup: Bool {
-        get { Store.shared.bool(key: "CombinedModules_popup", defaultValue: true) }
-        set { Store.shared.set(key: "CombinedModules_popup", value: newValue) }
-    }
-    
     private var systemWidgetsUpdatesState: Bool {
         get {
             let userDefaults = UserDefaults(suiteName: "\(Bundle.main.object(forInfoDictionaryKey: "TeamId") as! String).eu.exelban.Stats.widgets")
@@ -139,10 +134,6 @@ class ApplicationSettings: NSStackView {
                 action: #selector(self.toggleCombinedModulesSeparator),
                 state: self.combinedModulesSeparator
             )),
-            PreferencesRow(localizedString("Combined details"), component: switchView(
-                action: #selector(self.toggleCombinedModulesPopup),
-                state: self.combinedModulesPopup
-            ))
         ])
         scrollView.stackView.addArrangedSubview(self.combinedModulesView!)
         self.combinedModulesView?.setRowVisibility(1, newState: self.combinedModulesState)
@@ -381,11 +372,6 @@ class ApplicationSettings: NSStackView {
     @objc private func toggleCombinedModulesSeparator(_ sender: NSButton) {
         self.combinedModulesSeparator = sender.state == NSControl.StateValue.on
         NotificationCenter.default.post(name: .moduleRearrange, object: nil, userInfo: nil)
-    }
-    
-    @objc private func toggleCombinedModulesPopup(_ sender: NSButton) {
-        self.combinedModulesPopup = sender.state == NSControl.StateValue.on
-        NotificationCenter.default.post(name: .combinedModulesPopup, object: nil, userInfo: nil)
     }
     
     @objc private func toggleMenuBarPosition(_ sender: NSButton) {
