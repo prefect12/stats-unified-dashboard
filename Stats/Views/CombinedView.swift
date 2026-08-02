@@ -16,6 +16,8 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     private var menuBarItem: NSStatusItem? = nil
     private var view: NSView = NSView(frame: NSRect(x: 0, y: 0, width: 0, height: Constants.Widget.height))
     private var popup: PopupWindow? = nil
+    private var carouselTimer: Timer?
+    private var carouselIndex: Int = 0
     
     private var status: Bool {
         Store.shared.bool(key: "CombinedModules", defaultValue: false)
@@ -26,9 +28,17 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     private var separator: Bool {
         Store.shared.bool(key: "CombinedModules_separator", defaultValue: false)
     }
+
+    private var carouselInterval: TimeInterval {
+        TimeInterval(max(1, Store.shared.int(key: "CombinedModules_carouselInterval", defaultValue: 3)))
+    }
     
     private var activeModules: [Module] {
         modules.filter({ $0.enabled }).sorted(by: { $0.combinedPosition < $1.combinedPosition })
+    }
+
+    private var visibleModules: [Module] {
+        self.activeModules.filter({ !$0.menuBar.activeWidgets.isEmpty })
     }
     
     private var combinedModulesPopup: Bool {
@@ -104,6 +114,7 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     }
     
     public func disable() {
+        self.stopCarousel()
         self.activeModules.forEach { (m: Module) in
             m.menuBar.widgets.forEach { w in
                 w.item.onClick = nil
@@ -118,9 +129,20 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     private func recalculate() {
         self.view.subviews.forEach({ $0.removeFromSuperview() })
 
-        let visibleModules = self.activeModules.filter({ !$0.menuBar.activeWidgets.isEmpty })
+        let visibleModules = self.visibleModules
+        self.syncCarousel(moduleCount: visibleModules.count)
+
+        let modulesToDisplay: [Module]
+        if visibleModules.count > 1 {
+            self.carouselIndex = min(self.carouselIndex, visibleModules.count - 1)
+            modulesToDisplay = [visibleModules[self.carouselIndex]]
+        } else {
+            self.carouselIndex = 0
+            modulesToDisplay = visibleModules
+        }
+
         var w: CGFloat = 0
-        visibleModules.enumerated().forEach { (i, m) in
+        modulesToDisplay.enumerated().forEach { (i, m) in
             if i != 0 {
                 w += self.spacing
                 if self.separator {
@@ -137,6 +159,36 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
         }
         self.view.setFrameSize(NSSize(width: w, height: self.view.frame.height))
         self.menuBarItem?.length = w
+    }
+
+    private func syncCarousel(moduleCount: Int) {
+        guard self.status, moduleCount > 1 else {
+            self.stopCarousel()
+            self.carouselIndex = 0
+            return
+        }
+
+        guard self.carouselTimer?.isValid != true else { return }
+        self.carouselTimer = Timer.scheduledTimer(withTimeInterval: self.carouselInterval, repeats: true) { [weak self] _ in
+            self?.advanceCarousel()
+        }
+    }
+
+    private func stopCarousel() {
+        self.carouselTimer?.invalidate()
+        self.carouselTimer = nil
+    }
+
+    private func advanceCarousel() {
+        let modules = self.visibleModules
+        guard modules.count > 1 else {
+            self.stopCarousel()
+            self.recalculate()
+            return
+        }
+
+        self.carouselIndex = (self.carouselIndex + 1) % modules.count
+        self.recalculate()
     }
     
     // call when popup appear/disappear
@@ -184,6 +236,7 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     }
     
     @objc private func listenForModuleRearrrange() {
+        self.carouselIndex = 0
         self.recalculate()
     }
     
@@ -220,21 +273,25 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     @objc private func listenForModule(_ notification: Notification) {
         guard let name = notification.userInfo?["module"] as? String,
               let state = notification.userInfo?["state"] as? Bool,
-              state,
               let module = self.activeModules.first(where: { $0.name == name }) else { return }
-        
-        module.menuBar.widgets.forEach { w in
-            w.item.onClick = {
-                if let window = w.item.window {
-                    NotificationCenter.default.post(name: .togglePopup, object: nil, userInfo: [
-                        "module": module.name,
-                        "widget": w.type,
-                        "origin": window.frame.origin,
-                        "center": window.frame.width/2
-                    ])
+
+        if state {
+            module.menuBar.widgets.forEach { w in
+                w.item.onClick = {
+                    if let window = w.item.window {
+                        NotificationCenter.default.post(name: .togglePopup, object: nil, userInfo: [
+                            "module": module.name,
+                            "widget": w.type,
+                            "origin": window.frame.origin,
+                            "center": window.frame.width/2
+                        ])
+                    }
                 }
             }
         }
+
+        self.carouselIndex = 0
+        self.recalculate()
     }
 }
 
