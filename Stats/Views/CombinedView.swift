@@ -63,7 +63,9 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
         self.popup = PopupWindow(title: "Combined modules", module: .combined, view: Popup()) { _ in }
         
         if self.status {
-            self.enable()
+            DispatchQueue.main.async { [weak self] in
+                self?.enable()
+            }
         }
         
         NotificationCenter.default.addObserver(self, selector: #selector(listenForOneView), name: .toggleOneView, object: nil)
