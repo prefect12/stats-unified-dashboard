@@ -82,7 +82,7 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     public func enable() {
         self.menuBarItem = NSStatusBar.system.statusItem(withLength: 0)
         DispatchQueue.main.async(execute: {
-            self.menuBarItem?.autosaveName = "CombinedModules"
+            self.menuBarItem?.autosaveName = "StatsCombinedCarousel"
         })
         self.menuBarItem?.button?.addSubview(self.view)
         self.menuBarItem?.button?.image = NSImage()
