@@ -102,7 +102,7 @@ class ApplicationSettings: NSStackView {
         )
         self.combinedModulesCarouselIntervalSelector = selectView(
             action: #selector(self.toggleCombinedModulesCarouselInterval),
-            items: CombinedModulesCarouselIntervals,
+            items: combinedModulesCarouselIntervals,
             selected: self.combinedModulesCarouselIntervalValue
         )
         

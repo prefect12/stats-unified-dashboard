@@ -166,6 +166,7 @@
 "Combined modules" = "統合モジュール"; // translategemma:4b
 "Combined details" = "統合された詳細"; // translategemma:4b
 "Spacing" = "間隔"; // translategemma:4b
+"Carousel interval" = "Carousel interval";
 "Choose file" = "ファイルを選択"; // gemma4:31b
 "Stress tests" = "ストレステスト"; // translategemma:4b
 

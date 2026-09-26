@@ -166,6 +166,7 @@
 "Combined modules" = "מודולים משולבים"; // translategemma:4b
 "Combined details" = "פרטים משולבים"; // translategemma:4b
 "Spacing" = "רווח"; // gemma4:31b
+"Carousel interval" = "Carousel interval";
 "Choose file" = "בחר קובץ"; // translategemma:4b
 "Stress tests" = "בדיקות מאמץ"; // gemma4:31b
 

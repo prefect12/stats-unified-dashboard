@@ -77,7 +77,7 @@ public let CombinedModulesSpacings: [KeyValue_t] = [
     KeyValue_t(key: "8", value: "8", additional: 8)
 ]
 
-public let CombinedModulesCarouselIntervals: [KeyValue_t] = [
+public let combinedModulesCarouselIntervals: [KeyValue_t] = [
     KeyValue_t(key: "1", value: "1 sec", additional: 1),
     KeyValue_t(key: "2", value: "2 sec", additional: 2),
     KeyValue_t(key: "3", value: "3 sec", additional: 3),
