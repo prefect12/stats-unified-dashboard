@@ -1,0 +1,31 @@
+name: Package Unified Stats
+
+on:
+  push:
+    branches: [codex/stats-local-install-20260926]
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build application
+        run: |
+          xcodebuild -scheme Stats -destination 'platform=macOS' \
+            -configuration Release -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO ARCHS=arm64 ONLY_ACTIVE_ARCH=YES build > build.log 2>&1 || { tail -100 build.log; exit 1; }
+      - name: Package application
+        run: |
+          APP='build/Build/Products/Release/Stats.app'
+          test -x "$APP/Contents/MacOS/Stats"
+          /usr/libexec/PlistBuddy -c "Add :KadeForkSourceCommit string 2f5749d87e4466cd42b6f8afb87dd91121df2324" "$APP/Contents/Info.plist"
+          ditto -c -k --keepParent "$APP" Stats-Unified-arm64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Stats-Unified-arm64
+          path: Stats-Unified-arm64.zip
+          retention-days: 7
