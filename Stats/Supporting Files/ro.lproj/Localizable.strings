@@ -166,6 +166,7 @@
 "Combined modules" = "Module combinate"; // gemma4:31b
 "Combined details" = "Detalii combinate"; // translategemma:4b
 "Spacing" = "Spațiere"; // gemma4:31b
+"Carousel interval" = "Carousel interval";
 "Choose file" = "Alegeți fișierul"; // gemma4:31b
 "Stress tests" = "Teste de stres"; // translategemma:4b
 

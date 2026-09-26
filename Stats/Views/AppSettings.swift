@@ -34,11 +34,9 @@ class ApplicationSettings: NSStackView {
         get { Store.shared.bool(key: "CombinedModules_separator", defaultValue: false) }
         set { Store.shared.set(key: "CombinedModules_separator", value: newValue) }
     }
-    private var combinedModulesPopup: Bool {
-        get { Store.shared.bool(key: "CombinedModules_popup", defaultValue: true) }
-        set { Store.shared.set(key: "CombinedModules_popup", value: newValue) }
+    private var combinedModulesCarouselIntervalValue: String {
+        String(max(1, Store.shared.int(key: "CombinedModules_carouselInterval", defaultValue: 3)))
     }
-    
     private var systemWidgetsUpdatesState: Bool {
         get {
             let userDefaults = UserDefaults(suiteName: "\(Bundle.main.object(forInfoDictionaryKey: "TeamId") as! String).eu.exelban.Stats.widgets")
@@ -56,6 +54,7 @@ class ApplicationSettings: NSStackView {
     }
     
     private var updateSelector: NSPopUpButton?
+    private var combinedModulesCarouselIntervalSelector: NSPopUpButton?
     private var startAtLoginBtn: NSSwitch?
     private var remoteControlBtn: NSSwitch?
     private var remoteUpdatesBtn: NSSwitch?
@@ -101,6 +100,11 @@ class ApplicationSettings: NSStackView {
             action: #selector(self.toggleLaunchAtLogin),
             state: LaunchAtLogin.isEnabled
         )
+        self.combinedModulesCarouselIntervalSelector = selectView(
+            action: #selector(self.toggleCombinedModulesCarouselInterval),
+            items: combinedModulesCarouselIntervals,
+            selected: self.combinedModulesCarouselIntervalValue
+        )
         
         scrollView.stackView.addArrangedSubview(PreferencesSection([
             PreferencesRow(localizedString("Check for updates"), component: self.updateSelector!),
@@ -130,6 +134,7 @@ class ApplicationSettings: NSStackView {
                 state: self.combinedModulesState
             )),
             PreferencesRow(component: self.moduleSelector),
+            PreferencesRow(localizedString("Carousel interval"), component: self.combinedModulesCarouselIntervalSelector!),
             PreferencesRow(localizedString("Spacing"), component: selectView(
                 action: #selector(self.toggleCombinedModulesSpacing),
                 items: CombinedModulesSpacings,
@@ -139,10 +144,6 @@ class ApplicationSettings: NSStackView {
                 action: #selector(self.toggleCombinedModulesSeparator),
                 state: self.combinedModulesSeparator
             )),
-            PreferencesRow(localizedString("Combined details"), component: switchView(
-                action: #selector(self.toggleCombinedModulesPopup),
-                state: self.combinedModulesPopup
-            ))
         ])
         scrollView.stackView.addArrangedSubview(self.combinedModulesView!)
         self.combinedModulesView?.setRowVisibility(1, newState: self.combinedModulesState)
@@ -254,6 +255,16 @@ class ApplicationSettings: NSStackView {
             }
         }
         self.updateSelector?.selectItem(at: idx)
+
+        var carouselIdx = self.combinedModulesCarouselIntervalSelector?.indexOfSelectedItem ?? 0
+        if let items = self.combinedModulesCarouselIntervalSelector?.menu?.items {
+            for (i, item) in items.enumerated() {
+                if let obj = item.representedObject as? String, obj == self.combinedModulesCarouselIntervalValue {
+                    carouselIdx = i
+                }
+            }
+        }
+        self.combinedModulesCarouselIntervalSelector?.selectItem(at: carouselIdx)
     }
     
     private func informationView() -> NSView {
@@ -367,8 +378,6 @@ class ApplicationSettings: NSStackView {
         self.combinedModulesView?.setRowVisibility(2, newState: self.combinedModulesState)
         self.combinedModulesView?.setRowVisibility(3, newState: self.combinedModulesState)
         self.combinedModulesView?.setRowVisibility(4, newState: self.combinedModulesState)
-        self.combinedModulesView?.setRowVisibility(5, newState: self.combinedModulesState)
-        self.combinedModulesView?.setRowVisibility(6, newState: self.combinedModulesState)
         NotificationCenter.default.post(name: .toggleOneView, object: nil, userInfo: nil)
     }
     
@@ -382,10 +391,11 @@ class ApplicationSettings: NSStackView {
         self.combinedModulesSeparator = sender.state == NSControl.StateValue.on
         NotificationCenter.default.post(name: .moduleRearrange, object: nil, userInfo: nil)
     }
-    
-    @objc private func toggleCombinedModulesPopup(_ sender: NSButton) {
-        self.combinedModulesPopup = sender.state == NSControl.StateValue.on
-        NotificationCenter.default.post(name: .combinedModulesPopup, object: nil, userInfo: nil)
+
+    @objc private func toggleCombinedModulesCarouselInterval(_ sender: NSMenuItem) {
+        guard let key = sender.representedObject as? String, let interval = Int(key) else { return }
+        Store.shared.set(key: "CombinedModules_carouselInterval", value: max(1, interval))
+        NotificationCenter.default.post(name: .combinedModulesCarouselInterval, object: nil, userInfo: nil)
     }
     
     @objc private func toggleMenuBarPosition(_ sender: NSButton) {

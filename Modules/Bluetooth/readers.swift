@@ -34,7 +34,9 @@ private struct ioDevice {
 internal class DevicesReader: Reader<[BLEDevice]>, CBCentralManagerDelegate, CBPeripheralDelegate {
     private var devices: [BLEDevice] = []
     private var devicesToRemove: [UUID] = []
-    private var manager: CBCentralManager!
+    private lazy var manager: CBCentralManager = {
+        CBCentralManager(delegate: self, queue: nil)
+    }()
     
     private var characteristicsDict: [UUID: CBCharacteristic] = [:]
     private var bleLevels: [UUID: KeyValue_t] = [:]
@@ -44,7 +46,6 @@ internal class DevicesReader: Reader<[BLEDevice]>, CBCentralManagerDelegate, CBP
     
     init(callback: @escaping (T?) -> Void = {_ in }) {
         super.init(.bluetooth, callback: callback)
-        self.manager = CBCentralManager(delegate: self, queue: nil)
     }
     
     public override func read() {

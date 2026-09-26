@@ -91,6 +91,7 @@ open class Module {
     public var userDefaults: UserDefaults? = UserDefaults(suiteName: "\(Bundle.main.object(forInfoDictionaryKey: "TeamId") as! String).eu.exelban.Stats.widgets")
     
     public var popupKeyboardShortcut: [UInt16] { self.popupView?.keyboardShortcut ?? [] }
+    public var popupContent: Popup_p? { self.popupView }
     
     private var moduleType: ModuleType
     
@@ -289,6 +290,8 @@ open class Module {
     }
     
     @objc private func listenForPopupToggle(_ notification: Notification) {
+        guard !Store.shared.bool(key: "UnifiedPopupTabs", defaultValue: true) else { return }
+
         guard let popup = self.popup,
               let name = notification.userInfo?["module"] as? String,
               let buttonOrigin = notification.userInfo?["origin"] as? CGPoint,

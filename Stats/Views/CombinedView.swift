@@ -15,7 +15,9 @@ import Kit
 internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     private var menuBarItem: NSStatusItem? = nil
     private var view: NSView = NSView(frame: NSRect(x: 0, y: 0, width: 0, height: Constants.Widget.height))
-    private var popup: PopupWindow? = nil
+    private var carouselTimer: Timer?
+    private var carouselIndex: Int = 0
+    private var followUpRecalculationScheduled: Bool = false
     
     private var status: Bool {
         Store.shared.bool(key: "CombinedModules", defaultValue: false)
@@ -26,14 +28,17 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     private var separator: Bool {
         Store.shared.bool(key: "CombinedModules_separator", defaultValue: false)
     }
+
+    private var carouselInterval: TimeInterval {
+        TimeInterval(max(1, Store.shared.int(key: "CombinedModules_carouselInterval", defaultValue: 3)))
+    }
     
     private var activeModules: [Module] {
         modules.filter({ $0.enabled }).sorted(by: { $0.combinedPosition < $1.combinedPosition })
     }
-    
-    private var combinedModulesPopup: Bool {
-        get { Store.shared.bool(key: "CombinedModules_popup", defaultValue: true) }
-        set { Store.shared.set(key: "CombinedModules_popup", value: newValue) }
+
+    private var visibleModules: [Module] {
+        self.activeModules.filter({ !$0.menuBar.activeWidgets.isEmpty })
     }
     
     override init() {
@@ -49,54 +54,30 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
             }
         }
         
-        self.popup = PopupWindow(title: "Combined modules", module: .combined, view: Popup()) { _ in }
-        
-        if self.status {
-            self.enable()
-        }
-        
         NotificationCenter.default.addObserver(self, selector: #selector(listenForOneView), name: .toggleOneView, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(listenForModuleRearrrange), name: .moduleRearrange, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(listenCombinedModulesPopup), name: .combinedModulesPopup, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(listenForCarouselInterval), name: .combinedModulesCarouselInterval, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(listenForModule), name: .toggleModule, object: nil)
     }
     
     deinit {
         NotificationCenter.default.removeObserver(self, name: .toggleOneView, object: nil)
         NotificationCenter.default.removeObserver(self, name: .moduleRearrange, object: nil)
-        NotificationCenter.default.removeObserver(self, name: .combinedModulesPopup, object: nil)
+        NotificationCenter.default.removeObserver(self, name: .combinedModulesCarouselInterval, object: nil)
         NotificationCenter.default.removeObserver(self, name: .toggleModule, object: nil)
     }
     
     public func enable() {
+        guard self.menuBarItem == nil else { return }
         self.menuBarItem = NSStatusBar.system.statusItem(withLength: 0)
-        DispatchQueue.main.async(execute: {
-            self.menuBarItem?.autosaveName = "CombinedModules"
-        })
+        self.menuBarItem?.isVisible = true
         self.menuBarItem?.button?.addSubview(self.view)
         self.menuBarItem?.button?.image = NSImage()
         self.menuBarItem?.button?.toolTip = localizedString("Combined modules")
         
-        if !self.combinedModulesPopup {
-            self.activeModules.forEach { (m: Module) in
-                m.menuBar.widgets.forEach { w in
-                    w.item.onClick = {
-                        if let window = w.item.window {
-                            NotificationCenter.default.post(name: .togglePopup, object: nil, userInfo: [
-                                "module": m.name,
-                                "widget": w.type,
-                                "origin": window.frame.origin,
-                                "center": window.frame.width/2
-                            ])
-                        }
-                    }
-                }
-            }
-        } else {
-            self.menuBarItem?.button?.target = self
-            self.menuBarItem?.button?.action = #selector(self.togglePopup)
-            self.menuBarItem?.button?.sendAction(on: [.leftMouseDown, .rightMouseDown])
-        }
+        self.menuBarItem?.button?.target = self
+        self.menuBarItem?.button?.action = #selector(self.toggleTabbedPopup)
+        self.menuBarItem?.button?.sendAction(on: [.leftMouseDown, .rightMouseDown])
         
         DispatchQueue.main.async(execute: {
             self.recalculate()
@@ -104,6 +85,7 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     }
     
     public func disable() {
+        self.stopCarousel()
         self.activeModules.forEach { (m: Module) in
             m.menuBar.widgets.forEach { w in
                 w.item.onClick = nil
@@ -118,9 +100,24 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     private func recalculate() {
         self.view.subviews.forEach({ $0.removeFromSuperview() })
 
-        let visibleModules = self.activeModules.filter({ !$0.menuBar.activeWidgets.isEmpty })
+        let visibleModules = self.visibleModules
+        self.syncCarousel(moduleCount: visibleModules.count)
+
+        let hasPendingWidgets = visibleModules.contains {
+            $0.menuBar.view.subviews.count < $0.menuBar.activeWidgets.count
+        }
+
+        let modulesToDisplay: [Module]
+        if visibleModules.count > 1 {
+            self.carouselIndex = min(self.carouselIndex, visibleModules.count - 1)
+            modulesToDisplay = [visibleModules[self.carouselIndex]]
+        } else {
+            self.carouselIndex = 0
+            modulesToDisplay = visibleModules
+        }
+
         var w: CGFloat = 0
-        visibleModules.enumerated().forEach { (i, m) in
+        modulesToDisplay.enumerated().forEach { (i, m) in
             if i != 0 {
                 w += self.spacing
                 if self.separator {
@@ -137,40 +134,58 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
         }
         self.view.setFrameSize(NSSize(width: w, height: self.view.frame.height))
         self.menuBarItem?.length = w
+
+        if hasPendingWidgets && !self.followUpRecalculationScheduled {
+            self.followUpRecalculationScheduled = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                guard let self else { return }
+                self.followUpRecalculationScheduled = false
+                guard self.status else { return }
+                self.recalculate()
+            }
+        }
+    }
+
+    private func syncCarousel(moduleCount: Int) {
+        guard self.status, moduleCount > 1 else {
+            self.stopCarousel()
+            self.carouselIndex = 0
+            return
+        }
+
+        guard self.carouselTimer?.isValid != true else { return }
+        self.carouselTimer = Timer.scheduledTimer(withTimeInterval: self.carouselInterval, repeats: true) { [weak self] _ in
+            self?.advanceCarousel()
+        }
+    }
+
+    private func stopCarousel() {
+        self.carouselTimer?.invalidate()
+        self.carouselTimer = nil
+    }
+
+    private func advanceCarousel() {
+        let modules = self.visibleModules
+        guard modules.count > 1 else {
+            self.stopCarousel()
+            self.recalculate()
+            return
+        }
+
+        self.carouselIndex = (self.carouselIndex + 1) % modules.count
+        self.recalculate()
     }
     
     // call when popup appear/disappear
     private func visibilityCallback(_ state: Bool) {}
     
-    @objc private func togglePopup(_ sender: NSButton) {
-        guard let popup = self.popup, let item = self.menuBarItem, let window = item.button?.window else { return }
-        let openedWindows = NSApplication.shared.windows.filter{ $0 is NSPanel }
-        openedWindows.forEach{ $0.setIsVisible(false) }
-        
-        if popup.occlusionState.rawValue == 8192 {
-            NSApplication.shared.activate(ignoringOtherApps: true)
-            
-            popup.contentView?.invalidateIntrinsicContentSize()
-            
-            let windowCenter = popup.contentView!.intrinsicContentSize.width / 2
-            var x = window.frame.origin.x - windowCenter + window.frame.width/2
-            let y = window.frame.origin.y - popup.contentView!.intrinsicContentSize.height - 3
-            
-            let buttonPoint = NSPoint(x: window.frame.midX, y: window.frame.midY)
-            if let screen = NSScreen.screens.first(where: { $0.frame.contains(buttonPoint) }) ?? NSScreen.main {
-                if x + popup.contentView!.intrinsicContentSize.width > screen.frame.maxX {
-                    x = screen.frame.maxX - popup.contentView!.intrinsicContentSize.width - 3
-                }
-                if x < screen.frame.minX {
-                    x = screen.frame.minX + 3
-                }
-            }
-            
-            popup.setFrameOrigin(NSPoint(x: x, y: y))
-            popup.setIsVisible(true)
-        } else {
-            popup.setIsVisible(false)
-        }
+    @objc private func toggleTabbedPopup(_ sender: NSButton) {
+        guard let item = self.menuBarItem, let window = item.button?.window else { return }
+        NotificationCenter.default.post(name: .togglePopup, object: nil, userInfo: [
+            "module": "Dashboard",
+            "origin": window.frame.origin,
+            "center": window.frame.width/2
+        ])
     }
     
     @objc private func listenForOneView(_ notification: Notification) {
@@ -184,111 +199,270 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     }
     
     @objc private func listenForModuleRearrrange() {
+        self.carouselIndex = 0
         self.recalculate()
     }
-    
-    @objc private func listenCombinedModulesPopup() {
-        if !self.combinedModulesPopup {
-            self.activeModules.forEach { (m: Module) in
-                m.menuBar.widgets.forEach { w in
-                    w.item.onClick = {
-                        if let window = w.item.window {
-                            NotificationCenter.default.post(name: .togglePopup, object: nil, userInfo: [
-                                "module": m.name,
-                                "widget": w.type,
-                                "origin": window.frame.origin,
-                                "center": window.frame.width/2
-                            ])
-                        }
-                    }
-                }
-            }
-            self.menuBarItem?.button?.action = nil
-        } else {
-            self.activeModules.forEach { (m: Module) in
-                m.menuBar.widgets.forEach { w in
-                    w.item.onClick = nil
-                }
-            }
-            
-            self.menuBarItem?.button?.target = self
-            self.menuBarItem?.button?.action = #selector(self.togglePopup)
-            self.menuBarItem?.button?.sendAction(on: [.leftMouseDown, .rightMouseDown])
-        }
+
+    @objc private func listenForCarouselInterval() {
+        self.stopCarousel()
+        self.recalculate()
     }
     
     @objc private func listenForModule(_ notification: Notification) {
         guard let name = notification.userInfo?["module"] as? String,
               let state = notification.userInfo?["state"] as? Bool,
-              state,
               let module = self.activeModules.first(where: { $0.name == name }) else { return }
-        
-        module.menuBar.widgets.forEach { w in
-            w.item.onClick = {
-                if let window = w.item.window {
-                    NotificationCenter.default.post(name: .togglePopup, object: nil, userInfo: [
-                        "module": module.name,
-                        "widget": w.type,
-                        "origin": window.frame.origin,
-                        "center": window.frame.width/2
-                    ])
+
+        if state && !self.status {
+            module.menuBar.widgets.forEach { w in
+                w.item.onClick = {
+                    if let window = w.item.window {
+                        NotificationCenter.default.post(name: .togglePopup, object: nil, userInfo: [
+                            "module": module.name,
+                            "widget": w.type,
+                            "origin": window.frame.origin,
+                            "center": window.frame.width/2
+                        ])
+                    }
                 }
             }
         }
+
+        self.carouselIndex = 0
+        self.recalculate()
     }
 }
 
-private class Popup: NSStackView, Popup_p {
+internal final class TabbedPopup: NSObject {
+    private let content: TabbedPopupContent
+    private let popup: PopupWindow
+
+    override init() {
+        self.content = TabbedPopupContent()
+        self.popup = PopupWindow(title: "Dashboard", module: .combined, view: self.content) { _ in }
+        super.init()
+
+        self.content.selectionCallback = { [weak self] module in
+            self?.popup.setPopupTitle(module.name)
+        }
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(togglePopup),
+            name: .togglePopup,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(reloadTabs),
+            name: .toggleModule,
+            object: nil
+        )
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc private func reloadTabs() {
+        DispatchQueue.main.async { [weak self] in
+            self?.content.reloadModules()
+        }
+    }
+
+    @objc private func togglePopup(_ notification: Notification) {
+        guard let name = notification.userInfo?["module"] as? String,
+              let buttonOrigin = notification.userInfo?["origin"] as? CGPoint,
+              let buttonCenter = notification.userInfo?["center"] as? CGFloat else {
+            return
+        }
+
+        self.content.reloadModules()
+
+        let module: Module?
+        if name == "Dashboard" || name == "Combined modules" {
+            module = self.content.defaultModule
+        } else {
+            module = modules.first(where: { $0.name == name && $0.enabled && $0.popupContent != nil })
+        }
+        guard let module else { return }
+
+        if self.popup.isVisible && self.content.selectedModule === module {
+            self.popup.setIsVisible(false)
+            return
+        }
+
+        self.content.select(module)
+        self.popup.setPopupTitle(module.name)
+        self.showPopup(origin: buttonOrigin, center: buttonCenter)
+    }
+
+    private func showPopup(origin: CGPoint, center: CGFloat) {
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        self.popup.contentView?.invalidateIntrinsicContentSize()
+        self.popup.contentView?.layoutSubtreeIfNeeded()
+
+        let size = self.popup.frame.size
+        var x = origin.x - size.width/2 + center
+        let y = origin.y - size.height - 3
+
+        let buttonPoint = NSPoint(x: origin.x + center, y: origin.y)
+        if let screen = NSScreen.screens.first(where: { $0.frame.contains(buttonPoint) }) ?? NSScreen.main {
+            if x + size.width > screen.frame.maxX {
+                x = screen.frame.maxX - size.width - 3
+            }
+            if x < screen.frame.minX {
+                x = screen.frame.minX + 3
+            }
+        }
+
+        self.popup.setFrameOrigin(NSPoint(x: x, y: y))
+        self.popup.setIsVisible(true)
+    }
+}
+
+private final class TabbedPopupContent: NSStackView, Popup_p {
     fileprivate var keyboardShortcut: [UInt16] = []
     fileprivate var sizeCallback: ((NSSize) -> Void)? = nil
-    
-    init() {
-        self.keyboardShortcut = Store.shared.array(key: "CombinedModules_popup_keyboardShortcut", defaultValue: []) as? [UInt16] ?? []
-        
-        super.init(frame: NSRect(x: 0, y: 0, width: Constants.Popup.width, height: 0))
-        
-        self.orientation = .vertical
-        self.distribution = .fill
-        self.alignment = .width
-        self.spacing = Constants.Popup.spacing*3
-        
-        self.reinit()
-        
-        NotificationCenter.default.addObserver(self, selector: #selector(reinit), name: .toggleModule, object: nil)
+
+    private let tabs: NSSegmentedControl
+    private let tabsContainer: NSView
+    private let contentView: NSView
+    private let contentHeight: NSLayoutConstraint
+    private var availableModules: [Module] = []
+    fileprivate var selectedModule: Module?
+    fileprivate var selectionCallback: ((Module) -> Void)?
+    private var isAppeared: Bool = false
+
+    fileprivate var defaultModule: Module? {
+        self.availableModules.first
     }
-    
+
+    init() {
+        self.tabs = NSSegmentedControl(frame: NSRect(x: 0, y: 0, width: Constants.Popup.width, height: 28))
+        self.tabsContainer = NSView(frame: NSRect(x: 0, y: 0, width: Constants.Popup.width, height: 36))
+        self.contentView = NSView(frame: NSRect(x: 0, y: 0, width: Constants.Popup.width, height: 0))
+        self.contentHeight = self.contentView.heightAnchor.constraint(equalToConstant: 0)
+
+        super.init(frame: NSRect(x: 0, y: 0, width: Constants.Popup.width, height: 0))
+
+        self.orientation = .vertical
+        self.alignment = .width
+        self.distribution = .fill
+        self.spacing = Constants.Popup.spacing
+
+        self.tabs.trackingMode = .selectOne
+        self.tabs.segmentStyle = .rounded
+        self.tabs.segmentDistribution = .fillEqually
+        self.tabs.controlSize = .small
+        self.tabs.target = self
+        self.tabs.action = #selector(tabChanged)
+        self.tabs.translatesAutoresizingMaskIntoConstraints = false
+        self.tabsContainer.translatesAutoresizingMaskIntoConstraints = false
+        self.tabsContainer.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        self.tabsContainer.addSubview(self.tabs)
+        NSLayoutConstraint.activate([
+            self.tabs.centerXAnchor.constraint(equalTo: self.tabsContainer.centerXAnchor),
+            self.tabs.centerYAnchor.constraint(equalTo: self.tabsContainer.centerYAnchor),
+            self.tabs.widthAnchor.constraint(equalToConstant: min(440, Constants.Popup.width - 16)),
+            self.tabs.heightAnchor.constraint(equalToConstant: 28)
+        ])
+
+        self.contentView.translatesAutoresizingMaskIntoConstraints = false
+        self.contentHeight.isActive = true
+
+        self.addArrangedSubview(self.tabsContainer)
+        self.addArrangedSubview(self.contentView)
+        self.reloadModules()
+    }
+
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-    
-    deinit {
-        NotificationCenter.default.removeObserver(self, name: .toggleOneView, object: nil)
-    }
-    
-    fileprivate func settings() -> NSView? { return nil }
-    fileprivate func appear() {}
-    fileprivate func disappear() {}
-    fileprivate func setKeyboardShortcut(_ binding: [UInt16]) {
-        self.keyboardShortcut = binding
-        Store.shared.set(key: "CombinedModules_popup_keyboardShortcut", value: binding)
-    }
-    
-    @objc private func reinit() {
-        self.subviews.forEach({ $0.removeFromSuperview() })
-        
-        let availableModules = modules.filter({ $0.enabled && $0.portal != nil })
-        var modulesHeight: CGFloat = 0
-        availableModules.forEach { (m: Module) in
-            if let p = m.portal {
-                modulesHeight += p.height
-                self.addArrangedSubview(p)
+
+    fileprivate func reloadModules() {
+        self.availableModules = modules.filter { $0.enabled && $0.popupContent != nil }
+        self.tabs.segmentCount = self.availableModules.count
+        for (index, module) in self.availableModules.enumerated() {
+            if let icon = module.config.icon?.copy() as? NSImage {
+                icon.isTemplate = true
+                self.tabs.setImage(icon, forSegment: index)
+                self.tabs.setToolTip(localizedString(module.name), forSegment: index)
+            } else {
+                self.tabs.setLabel(localizedString(module.name), forSegment: index)
             }
         }
-        
-        let h = modulesHeight + (CGFloat(availableModules.count-1)*self.spacing)
-        if h > 0 {
-            self.setFrameSize(NSSize(width: self.frame.width, height: h))
-            self.sizeCallback?(self.frame.size)
+
+        if let selected = self.selectedModule,
+           let replacement = self.availableModules.first(where: { $0 === selected }) {
+            self.select(replacement)
+        } else if let first = self.availableModules.first {
+            self.select(first)
+        } else {
+            self.selectedModule = nil
+            self.updateContentSize(0)
         }
+    }
+
+    fileprivate func select(_ module: Module) {
+        guard self.availableModules.contains(where: { $0 === module }),
+              let index = self.availableModules.firstIndex(where: { $0 === module }),
+              let view = module.popupContent else {
+            return
+        }
+
+        if let previous = self.selectedModule, previous !== module, self.isAppeared {
+            previous.popupContent?.disappear()
+        }
+
+        self.selectedModule = module
+        self.tabs.selectedSegment = index
+        self.selectionCallback?(module)
+        self.contentView.subviews.forEach { $0.removeFromSuperview() }
+        view.sizeCallback = { [weak self] size in
+            self?.updateContentSize(size.height)
+        }
+        self.contentView.addSubview(view)
+        view.setFrameOrigin(.zero)
+        view.setFrameSize(NSSize(width: self.frame.width, height: view.frame.height))
+        self.updateContentSize(view.frame.height)
+
+        if self.isAppeared {
+            view.appear()
+        }
+    }
+
+    @objc private func tabChanged() {
+        let index = self.tabs.selectedSegment
+        guard index >= 0, index < self.availableModules.count else { return }
+        self.select(self.availableModules[index])
+    }
+
+    private func updateContentSize(_ height: CGFloat) {
+        let contentHeight = max(0, height)
+        self.contentHeight.constant = contentHeight
+        self.contentView.setFrameSize(NSSize(width: self.frame.width, height: contentHeight))
+        self.setFrameSize(NSSize(
+            width: self.frame.width,
+            height: 36 + Constants.Popup.spacing + contentHeight
+        ))
+        self.sizeCallback?(self.frame.size)
+    }
+
+    fileprivate func settings() -> NSView? { nil }
+
+    fileprivate func appear() {
+        self.isAppeared = true
+        self.selectedModule?.popupContent?.appear()
+    }
+
+    fileprivate func disappear() {
+        self.isAppeared = false
+        self.selectedModule?.popupContent?.disappear()
+    }
+
+    fileprivate func setKeyboardShortcut(_ binding: [UInt16]) {
+        self.keyboardShortcut = binding
+        Store.shared.set(key: "UnifiedPopupTabs_popup_keyboardShortcut", value: binding)
     }
 }

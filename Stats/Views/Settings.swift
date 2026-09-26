@@ -45,32 +45,32 @@ class SettingsWindow: NSWindow, NSWindowDelegate, NSToolbarDelegate {
             backing: .buffered,
             defer: false
         )
-        
+
         let sidebarViewController = NSSplitViewController()
-        
+
         let sidebarVC: NSViewController = NSViewController(nibName: nil, bundle: nil)
         sidebarVC.view = self.sidebarView
         let mainVC: NSViewController = NSViewController(nibName: nil, bundle: nil)
         mainVC.view = self.mainView
-        
+
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebarVC)
         let contentItem = NSSplitViewItem(viewController: mainVC)
-        
+
         sidebarItem.canCollapse = false
         contentItem.canCollapse = false
-        
+
         sidebarViewController.addSplitViewItem(sidebarItem)
         sidebarViewController.addSplitViewItem(contentItem)
-        
+
         contentItem.minimumThickness = 540
-        
+
         let newToolbar = NSToolbar(identifier: "eu.exelban.Stats.Settings.Toolbar")
         newToolbar.allowsUserCustomization = false
         newToolbar.autosavesConfiguration = true
         newToolbar.displayMode = .default
         newToolbar.showsBaselineSeparator = true
         newToolbar.delegate = self
-        
+
         self.toolbar = newToolbar
         self.contentViewController = sidebarViewController
         self.titlebarAppearsTransparent = true

@@ -114,6 +114,11 @@ public class PopupWindow: NSWindow, NSWindowDelegate {
         self.setIsVisible(false)
         self.delegate = self
     }
+
+    public func setPopupTitle(_ title: String) {
+        self.title = title
+        self.viewController.setTitle(title)
+    }
     
     public func windowWillMove(_ notification: Notification) {
         self.viewController.setCloseButton(true)
@@ -172,6 +177,11 @@ internal class PopupViewController: NSViewController {
         self.title = title
         self.popup.setTitle(title)
         self.popup.setView(view)
+    }
+
+    fileprivate func setTitle(_ title: String) {
+        self.title = title
+        self.popup.setTitle(title)
     }
     
     fileprivate func setCloseButton(_ state: Bool) {
